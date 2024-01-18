@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 import math
-
+import pytesseract
 
 
 
@@ -13,8 +13,10 @@ BKG_THRESH = 60
 CARD_THRESH = 30
 
 # Width and height of card corner, where rank and suit are
-CORNER_WIDTH = 32
-CORNER_HEIGHT = 84
+CORNER_WIDTH = 90
+CORNER_HEIGHT = 170
+# CORNER_WIDTH = 32
+# CORNER_HEIGHT = 84
 
 # Dimensions of rank train images
 RANK_WIDTH = 70
@@ -24,8 +26,10 @@ RANK_HEIGHT = 125
 SUIT_WIDTH = 70
 SUIT_HEIGHT = 100
 
-RANK_DIFF_MAX = 2000
-SUIT_DIFF_MAX = 700
+RANK_DIFF_MAX = 4000
+SUIT_DIFF_MAX = 1000
+# RANK_DIFF_MAX = 2000
+# SUIT_DIFF_MAX = 700
 
 
 CARD_MAX_AREA = 500000
@@ -87,8 +91,6 @@ def load_ranks(filepath):
         i = i + 1
 
     return train_ranks
-
-
 
 def load_suits(filepath):
     """Loads suit images from directory specified by filepath. Stores
@@ -256,24 +258,38 @@ def preprocess_card(contour, image):
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
 
-    cv2.imshow('wrap',qCard.warp)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    # Mostra le singole carte isolate e rettificate
+    # cv2.imshow('wrap',qCard.warp)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
 
     # Grab corner of warped card image and do a 4x zoom
     Qcorner = qCard.warp[0:CORNER_HEIGHT, 0:CORNER_WIDTH]
     Qcorner_zoom = cv2.resize(Qcorner, (0,0), fx=4, fy=4)
+    # cv2.imshow('angolo Top_Left', Qcorner_zoom)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
 
     # Sample known white pixel intensity to determine good threshold level
-    white_level = Qcorner_zoom[15,int((CORNER_WIDTH*4)/2)]
-    thresh_level = white_level - CARD_THRESH
-    if (thresh_level <= 0):
-        thresh_level = 1
-    retval, query_thresh = cv2.threshold(Qcorner_zoom, thresh_level, 255, cv2. THRESH_BINARY_INV)
-    
+    # white_level = Qcorner_zoom[15,int((CORNER_WIDTH*4)/2)]
+    # thresh_level = white_level - CARD_THRESH
+    # if (thresh_level <= 0):
+    #     thresh_level = 1
+    # retval, query_thresh = cv2.threshold(Qcorner_zoom, thresh_level, 255, cv2. THRESH_BINARY_INV)
+    query_thresh = Qcorner_zoom
+    # cv2.imshow('???', query_thresh)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+
     # Split in to top and bottom half (top shows rank, bottom shows suit)
-    Qrank = query_thresh[20:185, 0:128]
-    Qsuit = query_thresh[186:336, 0:128]
+    # Qrank = query_thresh[20:185, 0:128]
+    # Qsuit = query_thresh[186:336, 0:128]
+    # Split in to top and bottom half (top shows rank, bottom shows suit)
+    # Qrank = query_thresh[20:20+CORNER_HEIGHT, 0:0+CORNER_WIDTH]
+    # Qsuit = query_thresh[20+CORNER_HEIGHT:20+2*CORNER_HEIGHT, 0:0+CORNER_WIDTH]
+    Qrank = query_thresh[0:CORNER_HEIGHT*2, 0:CORNER_WIDTH*4]
+    Qsuit = query_thresh[CORNER_HEIGHT*2:CORNER_HEIGHT*4, 0:CORNER_WIDTH*4]
+
 
     # Find rank contour and bounding rectangle, isolate and find largest contour
     Qrank_cnts, hier = cv2.findContours(Qrank, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
@@ -283,9 +299,13 @@ def preprocess_card(contour, image):
     # image to match dimensions of the train rank image
     if len(Qrank_cnts) != 0:
         x1,y1,w1,h1 = cv2.boundingRect(Qrank_cnts[0])
+        # print(x1,y1,w1,h1)
         Qrank_roi = Qrank[y1:y1+h1, x1:x1+w1]
         Qrank_sized = cv2.resize(Qrank_roi, (RANK_WIDTH,RANK_HEIGHT), 0, 0)
         qCard.rank_img = Qrank_sized
+    cv2.imshow('split rank', qCard.rank_img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
     # Find suit contour and bounding rectangle, isolate and find largest contour
     Qsuit_cnts, hier = cv2.findContours(Qsuit, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
@@ -298,9 +318,11 @@ def preprocess_card(contour, image):
         Qsuit_roi = Qsuit[y2:y2+h2, x2:x2+w2]
         Qsuit_sized = cv2.resize(Qsuit_roi, (SUIT_WIDTH, SUIT_HEIGHT), 0, 0)
         qCard.suit_img = Qsuit_sized
+    # cv2.imshow('split suit', qCard.suit_img)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
 
     return qCard
-
 
 def match_card(qCard, train_ranks, train_suits):
     """Finds best rank and suit matches for the query card. Differences
@@ -321,27 +343,34 @@ def match_card(qCard, train_ranks, train_suits):
         # Difference the query card rank image from each of the train rank images,
         # and store the result with the least difference
         for Trank in train_ranks:
-                
-        
-
                 diff_img = cv2.absdiff(qCard.rank_img,Trank.img)
                 rank_diff = int(np.sum(diff_img)/255)
-                
+
+                # cv2.imshow('diff', diff_img)
+                # cv2.waitKey(0)
+                # cv2.destroyAllWindows()
+                print(rank_diff, best_rank_match_diff)
                 if rank_diff < best_rank_match_diff:
                     best_rank_diff_img = diff_img
                     best_rank_match_diff = rank_diff
                     best_rank_name = Trank.name
+                    print(best_rank_name)
 
         # Same process with suit images
         for Tsuit in train_suits:
-                
                 diff_img = cv2.absdiff(qCard.suit_img, Tsuit.img)
                 suit_diff = int(np.sum(diff_img)/255)
-                
+
+                # cv2.imshow('diff', diff_img)
+                # cv2.waitKey(0)
+                # cv2.destroyAllWindows()
+                print(suit_diff, best_suit_match_diff)
+
                 if suit_diff < best_suit_match_diff:
                     best_suit_diff_img = diff_img
                     best_suit_match_diff = suit_diff
                     best_suit_name = Tsuit.name
+                    # print(best_suit_name)
 
     # Combine best rank match and best suit match to get query card's identity.
     # If the best matches have too high of a difference value, card identity
@@ -354,7 +383,6 @@ def match_card(qCard, train_ranks, train_suits):
 
     # Return the identiy of the card and the quality of the suit and rank match
     return best_rank_match_name, best_suit_match_name, best_rank_match_diff, best_suit_match_diff
-
 
 def draw_results(image, qCard):
     """Draw the card name, center point, and contour on the camera image."""
@@ -448,10 +476,27 @@ def flattener(image, pts, w, h):
     M = cv2.getPerspectiveTransform(temp_rect,dst)
     warp = cv2.warpPerspective(image, M, (maxWidth, maxHeight))
     warp = cv2.cvtColor(warp,cv2.COLOR_BGR2GRAY)
-
-        
-
+    
     return warp
 
+def match_rank(qCard):
+    best_rank_match_name = "Unknown"
+    image = qCard.rank_img
+    if len(image) != 0:
+        # Usa Tesseract per riconoscere il testo nell'immagine
+        text = pytesseract.image_to_string(image, config='--psm 10 --oem 3 -c tessedit_char_whitelist=234567890AJQK')
+        # Rimuovi spazi bianchi inutili
+        text = text.strip()
+
+        # Verifica se il testo riconosciuto è uno dei caratteri validi
+        validi = ['2', '3', '4', '5', '6', '7', '8', '9', '0', 'A', 'J', 'Q', 'K']
+        if text in validi:
+            return text
+        else:
+            return "nd"
 
 
+def match_suit(qCard, train_suits):
+    best_suit_match_name = "Unknown"
+    
+    return
