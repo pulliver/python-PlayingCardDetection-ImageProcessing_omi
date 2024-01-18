@@ -23,12 +23,13 @@ train_suits = Cards.load_suits("suits_ranks")
 
 
 # Grab the image
-image = cv2.imread(r'images/8cards_top.jpg',cv2.IMREAD_COLOR)
+# image = cv2.imread(r'images/8cards_top.jpg',cv2.IMREAD_COLOR)
+image = cv2.imread(r'images/banco.png',cv2.IMREAD_COLOR)
 img_copy_function = image.copy()
 
 
 # Pre-process image (gray, blur, and threshold it)
-pre_proc = Cards.preprocess_image(image)
+pre_proc = Cards.preprocess_image_b_w(image)
 
 
 # Find and sort the contours of all cards in the image (query cards)

@@ -27,8 +27,11 @@ SUIT_HEIGHT = 100
 RANK_DIFF_MAX = 2000
 SUIT_DIFF_MAX = 700
 
+
 CARD_MAX_AREA = 500000
-CARD_MIN_AREA = 350000
+CARD_MIN_AREA = 15000
+# CARD_MAX_AREA = 500000
+# CARD_MIN_AREA = 350000
 
 font = cv2.FONT_HERSHEY_SIMPLEX
 
@@ -103,14 +106,42 @@ def load_suits(filepath):
 
     return train_suits
 
+def preprocess_image_b_w(image):
+    # Modifica del preprocess_image originale 
+    # per adattarlo ad un nuovo algoritmo
+    # invece di lavorare su scala di grigi
+    # lavoro direttamente sul colore per non perdere informazioni preziose
+    # e imposto una soglia sul bianco nei tre canali RGB
+    # tra 150 e 170 ok
 
+    white_thresh = 150
+
+    # Crea maschere per ciascun canale colore
+    mask_r = image[:,:,2] > white_thresh  # Canale Rosso
+    mask_g = image[:,:,1] > white_thresh  # Canale Verde
+    mask_b = image[:,:,0] > white_thresh  # Canale Blu
+
+    # Combina le maschere
+    mask_bianco = np.logical_and(mask_r, np.logical_and(mask_g, mask_b))
+
+    # Converti la maschera in uint8 (formato adatto per immagini)
+    mask_bianco = np.uint8(mask_bianco * 255)
+
+    # Mostra l'immagine
+    # cv2.imshow('Immagine Filtrata Bianca', mask_bianco)
+    # Mostra l'immagine BLUR
+    # cv2.imshow('Immagine Filtrata Bianca BLUR', mask_biancoblur)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+    
+    return mask_bianco
 
 def preprocess_image(image):
     """Returns a grayed, blurred, and adaptively thresholded image."""
 
     gray = cv2.cvtColor(image,cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray,(5,5),0)
-
+    
     # The best threshold level depends on the ambient lighting conditions.
     # For bright lighting, a high threshold must be used to isolate the cards
     # from the background. For dim lighting, a low threshold must be used.
@@ -125,9 +156,18 @@ def preprocess_image(image):
     thresh_level = bkg_level + BKG_THRESH
 
     retval, thresh = cv2.threshold(blur,thresh_level,255,cv2.THRESH_BINARY)
-    
-    return thresh
+    # _, threshold_image = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
 
+    # # Aspetta che un tasto venga premuto prima di chiudere la finestra
+    # # Dopo la pressione di un tasto, distruggi tutte le finestre create
+    # cv2.imshow('originale', image)
+
+    # cv2.imshow('gray', gray)
+    # cv2.imshow('blur', blur)
+    # cv2.imshow('Immagine Sogliata', thresh)
+    # cv2.imshow('bianco soglia', threshold_image)
+
+    return thresh
 
 def find_cards(thresh_image):
     """Finds all card-sized contours in a thresholded image.
@@ -137,9 +177,10 @@ def find_cards(thresh_image):
     # Find contours and sort their indices by contour size
     cnts,hier = cv2.findContours(thresh_image,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
     index_sort = sorted(range(len(cnts)), key=lambda i : cv2.contourArea(cnts[i]),reverse=True)
-
+    # print(hier[0][130])
     # If there are no contours, do nothing
     if len(cnts) == 0:
+        print('non ho trovato contorni cards.find_cards')
         return [], []
     
     # Otherwise, initialize empty sorted contour and hierarchy lists
@@ -156,30 +197,27 @@ def find_cards(thresh_image):
     for i in index_sort:
         cnts_sort.append(cnts[i])
         hier_sort.append(hier[0][i])
-
+    # print(index_sort)
     # Determine which of the contours are cards by applying the
     # following criteria: 1) Smaller area than the maximum card size,
     # 2), bigger area than the minimum card size, 3) have no parents,
     # and 4) have four corners
-
     
 
     for i in range(len(cnts_sort)):
         size = cv2.contourArea(cnts_sort[i])
         peri = cv2.arcLength(cnts_sort[i],True)
-        approx = cv2.approxPolyDP(cnts_sort[i],0.01*peri,True)
+        approx = cv2.approxPolyDP(cnts_sort[i],0.02*peri,True)
         
         if ((size < CARD_MAX_AREA) and (size > CARD_MIN_AREA)
             and (hier_sort[i][3] == -1) and (len(approx) == 4)):
             cnt_is_card[i] = 1
-
-    
+            # print(approx)
+            # print(cnts_sort[i])
+    # print(len(cnt_is_card))
+    # print(cnt_is_card)
 
     return cnts_sort, cnt_is_card
-
-
-
-
 
 def preprocess_card(contour, image):
     """Uses contour to find information about the query card. Isolates rank
@@ -192,7 +230,7 @@ def preprocess_card(contour, image):
 
     # Find perimeter of card and use it to approximate corner points
     peri = cv2.arcLength(contour,True)
-    approx = cv2.approxPolyDP(contour,0.01*peri,True)
+    approx = cv2.approxPolyDP(contour,0.02*peri,True)
     pts = np.float32(approx)
     qCard.corner_pts = pts
 
@@ -208,6 +246,19 @@ def preprocess_card(contour, image):
 
     # Warp card into 200x300 flattened image using perspective transform
     qCard.warp = flattener(image, pts, w, h)
+    # cv2.circle(image, qCard.center, radius=2, color=(0,0,255), thickness=-1)
+    # for punt in approx:
+    #     x, y = punt[0]
+    #     cv2.circle(image, (x,y), radius= 2, color=(255,0,0), thickness=-1)
+    # # vediamo il bounding rect su immagine
+    # cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    # cv2.imshow('rettangolo intorno alle carte', image)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+
+    cv2.imshow('wrap',qCard.warp)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
     # Grab corner of warped card image and do a 4x zoom
     Qcorner = qCard.warp[0:CORNER_HEIGHT, 0:CORNER_WIDTH]
